@@ -20,10 +20,13 @@ from mcp.server.fastmcp import FastMCP
 
 app = FastMCP("kepler-formal")
 
+def _workspace_root() -> Path:
+	return Path(__file__).resolve().parent
+
 
 def _default_ai_output_dir() -> Path:
 	"""Return the workspace-local default writable folder for AI outputs."""
-	return _workspace_root().resolve()
+	return _workspace_root()
 
 
 # Writable folder for AI-generated outputs (yaml/log).
@@ -38,13 +41,18 @@ logging.basicConfig(
 )
 
 
-def _workspace_root() -> Path:
-	return Path(__file__).resolve().parents[1]
-
 
 def _binary_path() -> Path:
-	# Requested command style: build/src/bin/kepler-formal
-	return (_workspace_root() / "build" / "src" / "bin" / "kepler-formal").resolve()
+	# Prefer the submodule build tree under thirdparty/.
+	candidates = [
+		_workspace_root() / "thirdparty" / "kepler-formal" / "build" / "src" / "bin" / "kepler-formal",
+		_workspace_root() / "build" / "src" / "bin" / "kepler-formal",
+	]
+	for candidate in candidates:
+		resolved = candidate.resolve()
+		if resolved.exists():
+			return resolved
+	return candidates[-1].resolve()
 
 
 def _resolve_path(path_value: str) -> Path:

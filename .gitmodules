@@ -1,0 +1,3 @@
+[submodule "thirdparty/kepler-formal"]
+	path = thirdparty/kepler-formal
+	url = https://github.com/keplertech/kepler-formal.git
