@@ -1,76 +1,37 @@
-# Configuring Kepler Formal MCP in Claude Desktop
+# Configure An MCP Client
 
-This guide explains how to add the Kepler Formal MCP server to Claude Desktop.
-
-**Note:** This guide assumes you have already installed Kepler Formal MCP. See the main README and build script for installation instructions.
-
-## Configuration
-
-### Step 1: Locate Your Configuration File
-
-Find your Claude Desktop configuration file:
-- **Linux/Mac**: `~/.config/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-### Step 2: Add Kepler Formal to Your MCP Servers
-
-Edit your configuration file and add the Kepler Formal server. Replace the placeholders with your actual paths:
-- `<mcp-server-name>`: A name for this server (e.g., `kepler`, `kepler-formal`, `formal-verification`)
-- `<path-to-kepler-formal-mcp>`: Full path to your Kepler Formal MCP repository
-- `<path-to-kepler-formal-src>`: Path to the Kepler Formal source code (usually `<path-to-kepler-formal-mcp>/thirdparty/kepler-formal/src`)
+Install the Python dependencies and packaged Kepler binary as described in the
+[README](../README.md). Configure your client's stdio MCP connection using
+absolute paths. This example uses the conventional `mcpServers` configuration:
 
 ```json
 {
   "mcpServers": {
-    "<mcp-server-name>": {
-      "command": "python3",
-      "args": [
-        "<path-to-kepler-formal-mcp>/server.py"
-      ],
+    "kepler-formal": {
+      "command": "/absolute/path/to/kepler-formal-mcp/.venv/bin/python",
+      "args": ["/absolute/path/to/kepler-formal-mcp/server.py"],
       "env": {
-        "PYTHONPATH": "<path-to-kepler-formal-src>"
+        "KEPLER_FORMAL_BIN": "/absolute/path/to/nix-profile/bin/kepler-formal",
+        "KEPLER_FORMAL_WORKSPACE": "/absolute/path/to/design-workspace",
+        "KEPLER_FORMAL_AI_OUTPUT_DIR": "/absolute/path/to/design-workspace/runs"
       }
     }
   }
 }
 ```
 
-### Step 3: Verify
+The configuration-file location depends on the MCP client and platform. Do not
+point `PYTHONPATH` at a Kepler source tree. The wrapper invokes the packaged CLI;
+it does not import a Naja build from that tree.
 
-1. Save the configuration file
-2. Restart Claude Desktop
-3. Check that your MCP server appears as "Connected" in Claude's MCP server list
+After restarting/reconnecting the client, discover the three typed tools:
+`verify_sec`, `run_kepler_formal_yaml`, `create_yaml_and_run_kepler_formal`.
+Use `verify_sec` for new integrations. Both design paths and all `.lib` paths must
+be inside the configured workspace. Tools may narrow the writable output root,
+but cannot expand it; each call creates its own `sec-*` directory there.
 
-## Strongly Recommended: Add a Shared Folder
-
-Adding a shared folder is strongly recommended. Without it, you'll need to copy-paste potentially large files directly into Claude's prompt, which is inefficient and can hit token limits.
-
-With the filesystem MCP server, Claude can access your files directly:
-
-```json
-"filesystem": {
-  "command": "npx",
-  "args": [
-    "-y",
-    "@modelcontextprotocol/server-filesystem",
-    "<path-to-shared-folder>"
-  ]
-}
-```
-
-Replace `<path-to-shared-folder>` with an absolute path to a folder where you want to store files accessible to Claude. This allows Claude to read large design files, test vectors, and documentation without copy-pasting.
-
-## Troubleshooting
-
-**Server won't connect:**
-- Verify paths are absolute (not relative)
-- Restart Claude Desktop after saving the config
-- Ensure the config file is valid JSON
-- Check that `<path-to-kepler-formal-mcp>/server.py` exists
-
-**"Command not found" for python3:**
-- Use the full path to Python: `/usr/bin/python3` instead of `python3`
-
-**Invalid JSON errors:**
-- Use a JSON validator to check your config file
-- Ensure all commas and quotes are correct
+For a missing binary, inspect `KEPLER_FORMAL_BIN` and executable permissions.
+For a missing input, check the workspace and path: relative tool paths resolve
+against the workspace, while relative paths inside YAML resolve against that
+YAML's directory. For a partial proof, inspect coverage and skipped reports;
+do not present a non-blocking warning as full equivalence.
