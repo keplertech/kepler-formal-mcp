@@ -12,6 +12,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -43,16 +44,29 @@ logging.basicConfig(
 
 
 def _binary_path() -> Path:
-	# Prefer the submodule build tree under thirdparty/.
-	candidates = [
-		_workspace_root() / "thirdparty" / "kepler-formal" / "build" / "src" / "bin" / "kepler-formal",
-		_workspace_root() / "build" / "src" / "bin" / "kepler-formal",
-	]
-	for candidate in candidates:
-		resolved = candidate.resolve()
-		if resolved.exists():
-			return resolved
-	return candidates[-1].resolve()
+	"""Locate the installed CLI, including Nix profile launchers.
+
+	An explicit path is useful for desktop clients that do not inherit the
+	user's shell PATH. Do not fall back when an explicit override is invalid.
+	"""
+	override = os.environ.get("KEPLER_FORMAL_BINARY")
+	if override:
+		candidate = Path(override).expanduser().resolve()
+	else:
+		installed = shutil.which("kepler-formal")
+		if installed is None:
+			raise FileNotFoundError(
+				"Kepler-Formal is not on PATH. Run ./install_kepler_formal.sh, "
+				"then set KEPLER_FORMAL_BINARY to the installed executable "
+				"if your MCP client does not inherit the Nix profile PATH."
+			)
+		candidate = Path(installed).resolve()
+	if not candidate.is_file() or not os.access(candidate, os.X_OK):
+		raise FileNotFoundError(
+			f"Kepler-Formal executable is missing or not executable: {candidate}. "
+			"Run ./install_kepler_formal.sh and check KEPLER_FORMAL_BINARY."
+		)
+	return candidate
 
 
 def _resolve_path(path_value: str) -> Path:
@@ -167,14 +181,15 @@ def _run_from_yaml(
 	allowed_dirs: list[Path],
 	log_file_name: str | None = None,
 ) -> dict[str, object]:
-	binary = _binary_path()
-	if not binary.exists():
+	try:
+		binary = _binary_path()
+	except (OSError, ValueError) as exc:
 		return {
 			"status": "error",
 			"exit_code": -1,
 			"yaml_config": str(yaml_path),
 			"stdout_tail": "",
-			"stderr_tail": f"Kepler-Formal binary not found: {binary}",
+			"stderr_tail": str(exc),
 		}
 
 	if not yaml_path.exists():
@@ -220,6 +235,14 @@ def _run_from_yaml(
 			"yaml_config": str(yaml_path),
 			"stdout_tail": "",
 			"stderr_tail": f"Kepler-Formal timed out after {timeout_seconds} seconds",
+		}
+	except OSError as exc:
+		return {
+			"status": "error",
+			"exit_code": -1,
+			"yaml_config": str(yaml_path),
+			"stdout_tail": "",
+			"stderr_tail": f"Could not start Kepler-Formal at {binary}: {exc}",
 		}
 
 	if result.returncode == 0 and not log_file_path.exists():

@@ -1,0 +1,2 @@
+# The server uses the MCP SDK 1.x FastMCP API.
+mcp>=1.12,<2

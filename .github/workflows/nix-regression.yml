@@ -1,0 +1,94 @@
+name: MCP regression on the Nix release
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    name: MCP regression (${{ matrix.system }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            system: x86_64-linux
+          - os: macos-latest
+            system: aarch64-darwin
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Prepare artifact directory
+        run: mkdir -p "$RUNNER_TEMP/kepler-formal-mcp-logs"
+
+      - uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.35.1/install
+          enable_kvm: false
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            max-jobs = 0
+            builders =
+            allow-import-from-derivation = false
+
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: keplertech
+          skipPush: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install MCP dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: -r requirements.txt \
+            2>&1 | tee "$RUNNER_TEMP/kepler-formal-mcp-logs/python-install.log"
+          python --version > "$RUNNER_TEMP/kepler-formal-mcp-logs/python-version.txt"
+          python -m pip freeze > "$RUNNER_TEMP/kepler-formal-mcp-logs/python-packages.txt"
+
+      - name: Install the published Nix release without building
+        run: |
+          set -euo pipefail
+          nix --version > "$RUNNER_TEMP/kepler-formal-mcp-logs/nix-version.txt"
+          bash ./install_kepler_formal.sh \
+            --profile "$RUNNER_TEMP/kepler-formal-profile" \
+            2>&1 | tee "$RUNNER_TEMP/kepler-formal-mcp-logs/nix-install.log"
+          nix profile list --profile "$RUNNER_TEMP/kepler-formal-profile" --json \
+            > "$RUNNER_TEMP/kepler-formal-mcp-logs/nix-profile.json"
+          "$RUNNER_TEMP/kepler-formal-profile/bin/kepler-formal" --help \
+            > "$RUNNER_TEMP/kepler-formal-mcp-logs/kepler-formal-help.txt" 2>&1
+
+      - name: Run real MCP checks against the installed release
+        run: |
+          set -euo pipefail
+          # The runner supplies a fresh temporary directory; the regression
+          # creates its own work directory and retains proof evidence there.
+          python scripts/run_nix_mcp_regression.py \
+            --binary "$RUNNER_TEMP/kepler-formal-profile/bin/kepler-formal" \
+            --work-dir "$RUNNER_TEMP/kepler-formal-mcp-regression" \
+            2>&1 | tee "$RUNNER_TEMP/kepler-formal-mcp-logs/mcp-regression.log"
+
+      - name: Upload installation logs and regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nix-mcp-regression-${{ matrix.system }}
+          path: |
+            ${{ runner.temp }}/kepler-formal-mcp-logs/
+            ${{ runner.temp }}/kepler-formal-mcp-regression/
+          if-no-files-found: warn
+          retention-days: 14
