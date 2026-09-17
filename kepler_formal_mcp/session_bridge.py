@@ -1,7 +1,7 @@
 """Authenticated loopback access to designs in the current Python process.
 
 Native pointers never leave this process. Use ``bridge.lock`` while editing the
-registered designs so edits and verification cannot access Naja concurrently.
+designs so edits and verification cannot access Naja concurrently.
 Closing the bridge waits for active work and leaves caller-owned netlists alive.
 """
 
@@ -18,7 +18,7 @@ import threading
 from typing import Any
 
 
-PROTOCOL = "kepler-formal-mcp-session-v1"
+PROTOCOL = "kepler-formal-mcp-session-v2"
 MAX_REQUEST_BYTES = 1024 * 1024
 SOCKET_TIMEOUT_SECONDS = 10
 
@@ -109,11 +109,12 @@ class SessionBridge:
     def session_id(self) -> str:
         return self._backend.session_id
 
-    def register_design(self, name: str, design: Any) -> Any:
+    def design_reference(self, design: Any) -> dict[str, Any]:
+        """Return the live native DB/library/design IDs; no registration or alias map."""
         with self.lock:
             if self._closing.is_set():
                 raise RuntimeError("Session bridge is closed")
-            return self._backend.register_design(name, design)
+            return self._backend.design_reference(design)
 
     def _dispatch(self, request: Any) -> dict[str, Any]:
         if not isinstance(request, dict):

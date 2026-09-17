@@ -304,7 +304,7 @@ class ToolTest(unittest.TestCase):
 
                         opened = await call("open_session", {"allowed_output_dir": str(self.outputs)})
                         try:
-                            await call("load_designs", {
+                            loaded = await call("load_designs", {
                                 "input_paths": [str(self.reference), str(self.candidate)],
                                 "timeout_seconds": 30,
                             })
@@ -312,6 +312,7 @@ class ToolTest(unittest.TestCase):
                             self.candidate.unlink()
                             for mode in ("lec", "sec"):
                                 result = await call("verify_session", {
+                                    "design1": loaded["loaded"][0], "design2": loaded["loaded"][1],
                                     "verification": mode, "solver": "glucose", "timeout_seconds": 30,
                                 })
                                 self.assert_verdict(result, "different")

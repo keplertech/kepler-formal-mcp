@@ -41,6 +41,11 @@ The existing `python server.py` launcher also works using the installed environm
 - `attach_session`: bind to a bridge in a Python interpreter that already owns NajaEDA designs.
 - `set_session`, `list_sessions`: select and inspect reusable sessions.
 
+Session verification uses explicit, session-scoped native Naja IDs
+(`db_id`, `library_id`, `design_id`), not registered names. See
+[persistent sessions and migration](docs/sessions.md) for managed and attached
+examples and the native-ID lifetime contract.
+
 The two file tools use a separate Python worker for each call. Session tools retain one worker or attach to a caller's interpreter, preserving loaded designs between checks. In both cases, native solver output is separate from MCP messages, and Kepler verifies the existing NajaEDA design handles. `get_kepler_formal_info` reuses the selected session when one exists.
 
 A minimal YAML file is:

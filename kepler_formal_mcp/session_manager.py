@@ -17,7 +17,7 @@ from uuid import UUID
 from .runner import error_result, tail
 
 
-PROTOCOL = "kepler-formal-mcp-session-v1"
+PROTOCOL = "kepler-formal-mcp-session-v2"
 
 
 def _descriptor(path: Path) -> dict:

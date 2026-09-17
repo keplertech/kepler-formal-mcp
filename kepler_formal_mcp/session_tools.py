@@ -12,6 +12,7 @@ from .options import LogLevel, Mode, SecEncoding, SecEngine, Solver
 from .runner import error_result
 from .session_manager import SessionManager
 from .tool_dispatch import threaded_tool
+from .design_reference import DesignReference
 
 
 manager = SessionManager()
@@ -39,8 +40,9 @@ def open_session(allowed_output_dir: str | None = None) -> str:
 def attach_session(connection_file: str) -> str:
     """Bind to SessionBridge running in an existing Python interpreter on this machine.
 
-    The caller must register its designs in that bridge. Closing this MCP
-    session only detaches; it never deletes the caller's designs or interpreter.
+    Designs are addressed by native DB/library/design IDs, not registered names.
+    Closing this MCP session only detaches; it never deletes the caller's designs
+    or interpreter.
     """
     return manager.attach(config.resolve_path(connection_file, Path.cwd()))
 
@@ -59,31 +61,29 @@ def list_sessions() -> str:
 
 @_json_result
 def load_designs(input_paths: list[str], liberty_files: list[str] | None = None,
-                 names: list[str] | None = None, session_id: str | None = None,
+                 session_id: str | None = None,
                  timeout_seconds: int = 600) -> str:
     """Load two Verilog designs once into a managed session for repeated verification.
 
-    Names default to reference/candidate and must not already exist. Inputs
-    are relative to the MCP launch directory. Attached interpreters load and
-    register their own designs through SessionBridge.register_design instead.
+    Returns two session-scoped native references in `loaded`, in input order.
+    Inputs are relative to the MCP launch directory. Attached interpreters
+    load their own designs and use SessionBridge.design_reference instead.
     """
     request = {"operation": "load",
                "input_paths": [str(config.resolve_path(path, Path.cwd())) for path in input_paths],
                "liberty_files": [str(config.resolve_path(path, Path.cwd())) for path in (liberty_files or [])]}
-    if names is not None:
-        request["names"] = names
     return manager.call(request, session_id, timeout_seconds)
 
 
 @_json_result
-def verify_session(design1: str = "reference", design2: str = "candidate",
+def verify_session(design1: DesignReference, design2: DesignReference,
                    session_id: str | None = None, verification: Mode = "lec",
                    solver: Solver = "kissat", max_k: int | None = None,
                    sec_engine: SecEngine | None = None, sec_encoding: SecEncoding | None = None,
                    allow_boundary_mismatch: bool = False, report_skipped_outputs: bool = False,
                    log_file_name: str | None = None, log_level: LogLevel | None = "info",
                    timeout_seconds: int = 600) -> str:
-    """Verify registered designs in place without reopening Python or rereading files.
+    """Verify explicit session-scoped native design references, without a name registry.
 
     Log paths are relative to the session's fixed output directory. Managed
     timeouts terminate/invalidate that session. Attached timeouts leave the
@@ -91,13 +91,17 @@ def verify_session(design1: str = "reference", design2: str = "candidate",
     Attached sessions retain skipped-output details in verification-result.json
     from the Python result, never writing native reports into the caller's cwd.
     """
-    return manager.call({"operation": "verify", "design1": design1, "design2": design2,
+    first, second = DesignReference.model_validate(design1), DesignReference.model_validate(design2)
+    selected = session_id if session_id is not None else manager.active_session_id
+    if first.session_id != selected or second.session_id != selected:
+        raise ValueError("Both native design references must belong to the selected session")
+    return manager.call({"operation": "verify", "design1": first.model_dump(), "design2": second.model_dump(),
                          "options": {"mode": verification, "solver": solver, "max_k": max_k,
                                      "sec_engine": sec_engine, "sec_encoding": sec_encoding,
                                      "allow_boundary_mismatch": allow_boundary_mismatch,
                                      "report_skipped_outputs": report_skipped_outputs,
                                      "log_file": log_file_name, "log_level": log_level}},
-                         session_id, timeout_seconds)
+                         selected, timeout_seconds)
 
 
 @_json_result

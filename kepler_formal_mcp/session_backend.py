@@ -1,4 +1,4 @@
-"""Persistent design handles hosted beside their native NajaEDA universe."""
+"""Persistent verification using direct native-ID lookup in the owning universe."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from .runner import REPORT_FILENAMES, read_reports, tail
 from .verification import OPTION_NAMES, load_designs, verify_loaded
+from .design_reference import DesignReference, reference_from_design
 
 
 # Naja's universe and verification caches are shared throughout an interpreter,
@@ -21,7 +22,7 @@ _NATIVE_LOCK = RLock()
 class DesignSession:
     """Host managed netlists or borrow live caller designs without taking ownership.
 
-    Attached callers must hold ``lock`` while changing or destroying registered
+    Attached callers must hold ``lock`` while changing or destroying native
     designs, so edits cannot race a request received by the bridge.
     """
 
@@ -36,88 +37,81 @@ class DesignSession:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._owned = owned
         self._closed = False
-        self._designs: dict[str, Any] = {}
         self._databases: list[Any] = []
         self._input_files: set[Path] = set()
         self._workspace = Path.cwd().resolve()
-        self._universe = None
+        self._universe = naja.NLUniverse.get()
         self._last_report = None
         if owned:
             if naja.NLUniverse.get() is not None:
                 raise RuntimeError("A managed session requires a fresh Naja universe")
             self._universe = naja.NLUniverse.create()
+        elif self._universe is None:
+            raise RuntimeError("An attached session requires an existing Naja universe")
 
     def _require_open(self):
         if self._closed:
             raise RuntimeError("The design session is closed")
-        if self._owned:
-            from najaeda import naja
+        from najaeda import naja
 
-            if naja.NLUniverse.get() is not self._universe:
-                raise ReferenceError("The managed session's universe is no longer active")
+        if naja.NLUniverse.get() is not self._universe:
+            raise ReferenceError("The session's Naja universe is no longer active")
 
-    def _name(self, name: Any) -> str:
-        if not isinstance(name, str) or not name.strip():
-            raise ValueError("Design names must be nonempty strings")
-        return name
+    def _resolve(self, value):
+        reference = DesignReference.model_validate(value)
+        if reference.session_id != self.session_id:
+            raise ValueError("Design reference belongs to a different session")
+        design = self._universe.getSNLDesign(reference.native_key())
+        if design is None:
+            raise ReferenceError("Native design ID does not exist in this session")
+        identity = design.getNLID()
+        if (identity.getDBID(), identity.getLibraryID(), identity.getDesignID()) != reference.native_key():
+            raise ReferenceError("Native lookup returned a different design identity")
+        return design
 
-    def _metadata(self, name: str) -> dict[str, Any]:
-        result = {"name": name}
-        try:
-            result.update(design_name=self._designs[name].najaeda_design.getName(), valid=True)
-        except (RuntimeError, ReferenceError) as error:
-            result.update(valid=False, reason=str(error))
-        return result
+    def _metadata(self, design):
+        return {"design_name": design.getName(),
+                "reference": reference_from_design(self.session_id, design).model_dump()}
 
     def _inspect(self) -> dict[str, Any]:
         return {
             "status": "success", "session_id": self.session_id, "kind": self.kind,
             "pid": self.pid, "output_dir": str(self.output_dir),
-            "designs": [self._metadata(name) for name in self._designs],
+            "designs": [self._metadata(design)
+                        for database in self._universe.getUserDBs()
+                        for library in database.getLibraries() if not library.isPrimitives()
+                        for design in library.getSNLDesigns() if not design.isPrimitive()],
+            "design_addressing": "native-id-v1",
         }
 
-    def register_design(self, name: str, design: Any) -> dict[str, Any]:
-        """Capture an existing raw design or NajaEDA Instance without copying it."""
-        from kepler_formal import NativeDesign, from_najaeda
-
+    def design_reference(self, design: Any) -> dict[str, Any]:
+        """Return native coordinates scoped to this session, without storing the design."""
         with self.lock:
             self._require_open()
-            name = self._name(name)
-            if name in self._designs:
-                raise ValueError(f"A design is already registered as {name!r}")
-            handle = design if isinstance(design, NativeDesign) else from_najaeda(design)
-            self._designs[name] = handle
-            return {"status": "success", "session_id": self.session_id, **self._metadata(name)}
+            reference = reference_from_design(self.session_id, design)
+            self._resolve(reference)
+            return reference.model_dump()
 
     def _load(self, request: dict[str, Any]) -> dict[str, Any]:
         if not self._owned:
-            raise ValueError("Attached sessions borrow caller designs; load them in NajaEDA and register them")
-        names = request.get("names", ["reference", "candidate"])
-        if not isinstance(names, list) or len(names) != 2:
-            raise ValueError("names must contain exactly two design names")
-        names = [self._name(name) for name in names]
-        if names[0] == names[1] or any(name in self._designs for name in names):
-            raise ValueError("Design names must be distinct and not already registered")
+            raise ValueError("Attached sessions use the caller's native IDs; load designs in the owner")
+        if "names" in request:
+            raise ValueError("Design aliases are no longer supported; use returned native references")
         inputs, libraries = request.get("input_paths"), request.get("liberty_files", [])
         databases, designs = load_designs(self._universe, inputs, libraries)
         try:
-            from kepler_formal import from_najaeda
-
-            handles = [from_najaeda(design) for design in designs]
+            references = [self.design_reference(design) for design in designs]
         except Exception:
             for database in reversed(databases):
                 database.destroy()
             raise
-        self._designs.update(zip(names, handles))
         self._databases.extend(databases)
         self._input_files.update(Path(path).resolve() for path in inputs + libraries)
-        return {**self._inspect(), "loaded": names}
+        return {**self._inspect(), "loaded": references}
 
     def _verify(self, request: dict[str, Any]) -> dict[str, Any]:
-        names = [self._name(request.get(key)) for key in ("design1", "design2")]
-        for name in names:
-            if name not in self._designs:
-                raise ValueError(f"Unknown registered design: {name!r}")
+        references = [DesignReference.model_validate(request.get(key)) for key in ("design1", "design2")]
+        designs = [self._resolve(reference) for reference in references]
         raw_options = request.get("options", {})
         if not isinstance(raw_options, dict):
             raise ValueError("options must be a mapping")
@@ -150,7 +144,7 @@ class DesignSession:
                 (self._workspace / name).unlink(missing_ok=True)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         self._last_report = None
-        result = verify_loaded(self._designs[names[0]], self._designs[names[1]], options)
+        result = verify_loaded(designs[0], designs[1], options)
         report_id = uuid4().hex
         report_dir = self.output_dir / f"reports-{report_id}"
         report_dir.mkdir()
@@ -162,6 +156,7 @@ class DesignSession:
         response = {
             "status": "error" if result["status"] == "error" else "success",
             "session_id": self.session_id, "exit_code": result["exit_code"],
+            "design1": references[0].model_dump(), "design2": references[1].model_dump(),
             "verdict": result["status"], "verification_result": result,
             "generated_log_file": str(log_path),
             "log_tail": tail(log_path.read_text(encoding="utf-8", errors="replace")) if log_path.is_file() else "",
@@ -206,7 +201,6 @@ class DesignSession:
     def close(self) -> dict[str, Any]:
         with self.lock:
             if not self._closed:
-                self._designs.clear()
                 self._last_report = None
                 self._databases.clear()
                 if self._owned:
