@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import yaml
+
+from .options import LogLevel, Mode, SecEncoding, SecEngine, Solver
 
 
 SUPPORTED_KEYS = {
@@ -87,13 +89,13 @@ def normalize(config: dict, yaml_path: Path, root: Path,
         "allow_boundary_mismatch": _boolean(config, "allow_boundary_mismatch"),
         "report_skipped_outputs": _boolean(config, "report_skipped_outputs"),
     }
-    for key, choices in (("mode", ("lec", "sec")),
-                         ("solver", ("kissat", "cadical", "glucose")),
-                         ("log_level", ("info", "debug"))):
+    for key, choices in (("mode", get_args(Mode)),
+                         ("solver", get_args(Solver)),
+                         ("log_level", (*get_args(LogLevel), None))):
         if result[key] not in choices:
-            raise ValueError(f"{key} must be one of: {', '.join(choices)}")
-    for key, choices in (("sec_engine", ("pdr", "k_induction", "imc")),
-                         ("sec_encoding", ("dual_rail_steady", "binary"))):
+            raise ValueError(f"{key} must be one of: {', '.join(map(str, choices))}")
+    for key, choices in (("sec_engine", get_args(SecEngine)),
+                         ("sec_encoding", get_args(SecEncoding))):
         value = config.get(key)
         if value is not None and value not in choices:
             raise ValueError(f"{key} must be one of: {', '.join(choices)}")

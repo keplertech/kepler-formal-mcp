@@ -75,7 +75,15 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     try:
         request = json.loads(arguments.request.read_text(encoding="utf-8"))
-        result = verify(request)
+        operation = request.get("operation", "verify")
+        if operation == "verify":
+            result = verify(request)
+        elif operation == "info":
+            from .capabilities import get_capabilities
+
+            result = get_capabilities()
+        else:
+            raise ValueError(f"Unknown worker operation: {operation!r}")
     except Exception as error:
         traceback.print_exc(file=sys.stderr)
         result = {

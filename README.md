@@ -34,10 +34,11 @@ The existing `python server.py` launcher also works using the installed environm
 
 ## Tools
 
+- `get_kepler_formal_info`: report installed versions, build revision, and the available Python API options/results.
 - `run_kepler_formal_yaml`: verify the pair specified by an existing YAML file.
 - `create_yaml_and_run_kepler_formal`: create a YAML file from two Verilog paths and optional common Liberty libraries, then verify the pair.
 
-Both tools use the Python library in a separate Python worker for each call. This keeps native solver output out of the MCP stdio channel and allows `timeout_seconds` to stop a verification. The worker loads both designs with NajaEDA and passes their live design handles to `kepler_formal.verify_designs`.
+The tools use the Python library in a separate Python worker for each call. This keeps native solver output out of the MCP stdio channel and allows `timeout_seconds` to stop a verification. For verification, the worker loads both designs with NajaEDA and passes their live design handles to `kepler_formal.verify_designs`.
 
 A minimal YAML file is:
 
@@ -58,6 +59,8 @@ Set `KEPLER_FORMAL_AI_OUTPUT_DIR` to a writable output directory, or pass `allow
 
 Supported verification settings are `verification` (`lec` or `sec`; `mode` is an alias), `solver`, `max_k`, `sec_engine`, `sec_encoding`, `allow_boundary_mismatch`, `report_skipped_outputs`, `log_file`, and `log_level`. CNF export is unavailable through this library API: `cnf_export` defaults to `false`, and `true` returns a clear error. Unsupported CLI-only YAML options also return an error.
 
+All current `VerificationOptions` fields are exposed. See [Python API coverage and SEC usage](docs/python-api.md) for the mapping and supported choices. MCP tool schemas list the accepted modes, solvers, engines and encodings; `get_kepler_formal_info` reads them from the installed library.
+
 ## Results
 
 The returned JSON separates tool execution from the verification verdict:
@@ -66,6 +69,7 @@ The returned JSON separates tool execution from the verification verdict:
 - `verdict`: the equivalence outcome, such as `equivalent`, `different`, or `inconclusive`.
 - `verification_result`: the structured result returned by Kepler Formal.
 - `stdout_tail` / `stderr_tail`: captured worker output for diagnosis.
+- `reports`: contents of native skipped-output reports, retained after worker cleanup when `report_skipped_outputs` is enabled.
 
 Always inspect `verdict`: a successful execution can report different designs. A bounded SEC check can be inconclusive; it is not an equivalence proof.
 
@@ -77,4 +81,4 @@ See [the small design example](docs/test-generation.md) for equivalent and diffe
 python -m unittest discover -s tests -v
 ```
 
-CI runs the tests against the published dependencies on Linux x86_64, macOS ARM64, and Windows AMD64 with Python 3.10 and 3.14. Tests cover the real Python verifier, configuration validation, worker isolation, and MCP stdio calls.
+CI runs the tests against the published dependencies on Linux x86_64, macOS ARM64, and Windows AMD64 with Python 3.10 and 3.14. Tests cover every solver and SEC engine/encoding, API option/result coverage, diagnostic reports, configuration validation, worker isolation, and MCP stdio calls.

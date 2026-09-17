@@ -274,6 +274,11 @@ class ToolTest(unittest.TestCase):
                         tools = await session.list_tools()
                         names = {tool.name for tool in tools.tools}
                         self.assertTrue({"run_kepler_formal_yaml", "create_yaml_and_run_kepler_formal"} <= names)
+                        response = await session.call_tool("get_kepler_formal_info", {})
+                        self.assertFalse(response.isError, response)
+                        information = json.loads(next(item.text for item in response.content if item.type == "text"))
+                        self.assertEqual(information["status"], "success", information)
+                        self.assertIn("sec", information["enums"]["VerificationMode"])
                         for content, verdict in [(PASS_THROUGH, "equivalent"), (CONSTANT_OUTPUT, "different")]:
                             self.candidate.write_text(content, encoding="utf-8")
                             response = await session.call_tool("create_yaml_and_run_kepler_formal", {

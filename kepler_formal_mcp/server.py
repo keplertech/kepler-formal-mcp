@@ -11,9 +11,25 @@ from mcp.server.fastmcp import FastMCP
 import yaml
 
 from . import config, runner
+from .options import LogLevel, Mode, SecEncoding, SecEngine, Solver
 
 
 app = FastMCP("kepler-formal")
+
+
+@app.tool()
+def get_kepler_formal_info() -> str:
+    """Report the installed versions, build revision, and supported Python API.
+
+    Lists verification modes, solvers, SEC engines/encodings, option defaults,
+    result fields and statuses from the installed Kepler library. Native design
+    handles are process-local Python objects and cannot be passed through MCP.
+    """
+    try:
+        result = runner.get_info()
+    except (OSError, ValueError) as error:
+        result = runner.error_result(str(error))
+    return json.dumps(result, indent=2)
 
 
 @app.tool()
@@ -47,17 +63,17 @@ def create_yaml_and_run_kepler_formal(
     input_paths: list[str],
     liberty_files: list[str],
     yaml_output_path: str = "test_config_verilog.yaml",
-    log_level: str = "info",
-    solver: str = "kissat",
+    log_level: LogLevel | None = "info",
+    solver: Solver = "kissat",
     cnf_export: bool = False,
     cnf_export_path: str = "./sat.cnf",
     log_file_name: str | None = None,
     allowed_output_dir: str | None = None,
     timeout_seconds: int = 600,
-    verification: str = "lec",
+    verification: Mode = "lec",
     max_k: int | None = None,
-    sec_engine: str | None = None,
-    sec_encoding: str | None = None,
+    sec_engine: SecEngine | None = None,
+    sec_encoding: SecEncoding | None = None,
     allow_boundary_mismatch: bool = False,
     report_skipped_outputs: bool = False,
 ) -> str:
@@ -89,7 +105,8 @@ def create_yaml_and_run_kepler_formal(
         if type(timeout_seconds) is not int or timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be a positive integer")
         document["log_file"] = request["log_file"]
-        document = {key: value for key, value in document.items() if value is not None}
+        document = {key: value for key, value in document.items()
+                    if value is not None or key == "log_level"}
         text = yaml.safe_dump(document, sort_keys=False)
         yaml_path.parent.mkdir(parents=True, exist_ok=True)
         yaml_path.write_text(text, encoding="utf-8")
