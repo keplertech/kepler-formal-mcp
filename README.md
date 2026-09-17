@@ -37,8 +37,11 @@ The existing `python server.py` launcher also works using the installed environm
 - `get_kepler_formal_info`: report installed versions, build revision, and the available Python API options/results.
 - `run_kepler_formal_yaml`: verify the pair specified by an existing YAML file.
 - `create_yaml_and_run_kepler_formal`: create a YAML file from two Verilog paths and optional common Liberty libraries, then verify the pair.
+- `open_session`, `load_designs`, `verify_session`, `close_session`: load designs once and reuse one Python worker for repeated checks.
+- `attach_session`: bind to a bridge in a Python interpreter that already owns NajaEDA designs.
+- `set_session`, `list_sessions`: select and inspect reusable sessions.
 
-The tools use the Python library in a separate Python worker for each call. This keeps native solver output out of the MCP stdio channel and allows `timeout_seconds` to stop a verification. For verification, the worker loads both designs with NajaEDA and passes their live design handles to `kepler_formal.verify_designs`.
+The two file tools use a separate Python worker for each call. Session tools retain one worker or attach to a caller's interpreter, preserving loaded designs between checks. In both cases, native solver output is separate from MCP messages, and Kepler verifies the existing NajaEDA design handles. `get_kepler_formal_info` reuses the selected session when one exists.
 
 A minimal YAML file is:
 
@@ -60,6 +63,8 @@ Set `KEPLER_FORMAL_AI_OUTPUT_DIR` to a writable output directory, or pass `allow
 Supported verification settings are `verification` (`lec` or `sec`; `mode` is an alias), `solver`, `max_k`, `sec_engine`, `sec_encoding`, `allow_boundary_mismatch`, `report_skipped_outputs`, `log_file`, and `log_level`. CNF export is unavailable through this library API: `cnf_export` defaults to `false`, and `true` returns a clear error. Unsupported CLI-only YAML options also return an error.
 
 All current `VerificationOptions` fields are exposed. See [Python API coverage and SEC usage](docs/python-api.md) for the mapping and supported choices. MCP tool schemas list the accepted modes, solvers, engines and encodings; `get_kepler_formal_info` reads them from the installed library.
+
+See [persistent sessions and attaching to live NajaEDA designs](docs/sessions.md) to reuse loaded netlists across calls or verify designs already owned by another Python process.
 
 ## Results
 

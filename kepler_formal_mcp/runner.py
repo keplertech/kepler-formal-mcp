@@ -59,7 +59,8 @@ def _invoke_worker(request: dict, timeout_seconds: int, yaml_path: Path | None =
         try:
             completed = subprocess.run(
                 [sys.executable, "-m", "kepler_formal_mcp.worker", str(request_path), str(result_path)],
-                cwd=work, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                cwd=work, stdin=subprocess.DEVNULL,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
                 timeout=timeout_seconds, check=False,
             )
         except subprocess.TimeoutExpired as error:

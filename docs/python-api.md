@@ -6,7 +6,8 @@ NajaEDA loads both designs inside the worker, and Kepler borrows their existing
 native handles for the check.
 
 All nine `VerificationOptions` fields are available through
-`create_yaml_and_run_kepler_formal` and existing YAML configurations:
+`create_yaml_and_run_kepler_formal`, `verify_session`, and existing YAML configurations
+(attached sessions cannot request process-relative skipped-output report files):
 
 | Python option | MCP argument | YAML key | Accepted values |
 | --- | --- | --- | --- |
@@ -66,11 +67,15 @@ Call `get_kepler_formal_info` without arguments for the installed Kepler version
 and git revision, NajaEDA version, supported enums/statuses, Python option
 defaults, and result field names. This exposes `version()` and `git_hash()`
 through MCP and reads the API metadata from the installed package.
+With an active session it queries that interpreter; otherwise it uses a temporary worker.
 
 `NativeDesign` and `from_najaeda()` operate on live Python/C++ objects within
 one process. The worker uses this interface internally; raw pointers and handles
 from another process cannot be sent through MCP JSON. The `najaeda` export is a
 compatibility alias for the separate NajaEDA package, not a remote netlist API.
+To reuse loaded designs or bind to an existing interpreter, use the
+[session tools and Python bridge](sessions.md). Verification then runs in the
+process that owns those designs.
 
 The tests compare MCP option names, enum choices, and returned fields against
 the installed Python API, so missing coverage is detected when the dependency

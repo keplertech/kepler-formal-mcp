@@ -295,6 +295,33 @@ class ToolTest(unittest.TestCase):
                         # A second protocol operation also works after native solver logging.
                         self.assertEqual(names, {tool.name for tool in (await session.list_tools()).tools})
 
+                        async def call(name, arguments):
+                            response = await session.call_tool(name, arguments)
+                            self.assertFalse(response.isError, response)
+                            result = json.loads(next(item.text for item in response.content if item.type == "text"))
+                            self.assertEqual(result["status"], "success", result)
+                            return result
+
+                        opened = await call("open_session", {"allowed_output_dir": str(self.outputs)})
+                        try:
+                            await call("load_designs", {
+                                "input_paths": [str(self.reference), str(self.candidate)],
+                                "timeout_seconds": 30,
+                            })
+                            self.reference.unlink()
+                            self.candidate.unlink()
+                            for mode in ("lec", "sec"):
+                                result = await call("verify_session", {
+                                    "verification": mode, "solver": "glucose", "timeout_seconds": 30,
+                                })
+                                self.assert_verdict(result, "different")
+                                self.assertEqual(result["pid"], opened["pid"])
+                            information = await call("get_kepler_formal_info", {})
+                            self.assertEqual(information["pid"], opened["pid"])
+                            self.assertEqual(information["session_id"], opened["session_id"])
+                        finally:
+                            await call("close_session", {"session_id": opened["session_id"]})
+
         asyncio.run(exercise())
 
 
