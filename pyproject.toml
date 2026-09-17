@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kepler-formal-mcp"
+version = "0.1.0"
+description = "MCP tools for equivalence checking with the Kepler Formal Python library"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "kepler-formal==0.5.0",
+    "mcp>=1.12,<2",
+    "PyYAML>=6,<7",
+]
+
+[project.scripts]
+kepler-formal-mcp = "kepler_formal_mcp.server:main"
+
+[project.urls]
+Repository = "https://github.com/keplertech/kepler-formal-mcp"
+
+[tool.setuptools.packages.find]
+include = ["kepler_formal_mcp*"]
