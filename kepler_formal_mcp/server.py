@@ -12,12 +12,19 @@ import yaml
 
 from . import config, runner
 from .options import LogLevel, Mode, SecEncoding, SecEngine, Solver
+from .tool_dispatch import threaded_tool
+from . import session_tools
+from .session_tools import (
+    attach_session, close_session, list_sessions, load_designs,
+    open_session, set_session, verify_session,
+)
 
 
 app = FastMCP("kepler-formal")
+session_tools.register(app)
 
 
-@app.tool()
+@threaded_tool(app)
 def get_kepler_formal_info() -> str:
     """Report the installed versions, build revision, and supported Python API.
 
@@ -26,13 +33,14 @@ def get_kepler_formal_info() -> str:
     handles are process-local Python objects and cannot be passed through MCP.
     """
     try:
-        result = runner.get_info()
+        result = (session_tools.manager.call({"operation": "info"}, timeout_seconds=30)
+                  if session_tools.manager.active_session_id is not None else runner.get_info())
     except (OSError, ValueError) as error:
         result = runner.error_result(str(error))
     return json.dumps(result, indent=2)
 
 
-@app.tool()
+@threaded_tool(app)
 def run_kepler_formal_yaml(
     yaml_file: str,
     timeout_seconds: int = 600,
@@ -58,7 +66,7 @@ def run_kepler_formal_yaml(
     return json.dumps(result, indent=2)
 
 
-@app.tool()
+@threaded_tool(app)
 def create_yaml_and_run_kepler_formal(
     input_paths: list[str],
     liberty_files: list[str],
@@ -120,4 +128,7 @@ def create_yaml_and_run_kepler_formal(
 def main() -> None:
     logging.basicConfig(level=logging.INFO, stream=sys.stderr,
                         format="[kepler-mcp] [%(levelname)s] %(message)s")
-    app.run()
+    try:
+        app.run()
+    finally:
+        session_tools.manager.close_all()
