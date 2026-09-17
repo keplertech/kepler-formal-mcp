@@ -16,7 +16,7 @@ from .tool_dispatch import threaded_tool
 from . import session_tools
 from .session_tools import (
     attach_session, close_session, list_sessions, load_designs,
-    open_session, set_session, verify_session,
+    open_session, set_session, verify_session, get_session_reports,
 )
 
 

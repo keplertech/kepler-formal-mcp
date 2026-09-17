@@ -73,10 +73,24 @@ destroying the caller's universe.
 
 ## Timeouts and outputs
 
-Both session types restrict logs to their selected output directory. Managed
-sessions can produce skipped-output reports in their own working directory.
-Attached sessions reject `report_skipped_outputs=True`, because native reports
-would otherwise write into the owning application's working directory.
+Both session types restrict logs to their selected output directory. Every
+completed verification saves the full Python result as `verification-result.json`
+inside a fresh `reports-<id>` directory and returns its contents in `reports`,
+with `report_format="structured-v1"`, `report_id` and `report_paths`.
+This includes checked/proved counts, unproven outputs, skipped observed outputs,
+the semantic outcome and reason. Missing data is never replaced with empty lists.
+
+`get_session_reports(session_id=..., report_id=...)` retrieves the latest result
+without re-running the solver. The optional ID rejects stale requests. Previous
+reports remain on disk; closing a session does not delete them. A report refers
+to the designs at verification time, not to later edits by the caller.
+
+Managed sessions can additionally produce the native category-specific text
+reports in their private working directory. Attached sessions now accept
+`report_skipped_outputs=True`, but report those details through the structured
+Python result rather than native text files. They neither change the caller's
+working directory nor write category reports there. Consumers must check the
+reported format; do not manufacture empty native text files as proof of no skips.
 
 A managed-session timeout terminates its process and invalidates that session;
 open and load a new one to retry. An attached-session timeout stops waiting but

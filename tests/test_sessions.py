@@ -167,7 +167,7 @@ class ManagedSessionTest(SessionFixture):
         names = {tool.name for tool in asyncio.run(server.app.list_tools())}
         self.assertTrue({
             "open_session", "set_session", "list_sessions", "load_designs",
-            "verify_session", "close_session", "attach_session",
+            "verify_session", "get_session_reports", "close_session", "attach_session",
         } <= names)
 
 
@@ -230,16 +230,84 @@ class AttachedSessionTest(SessionFixture):
         ))
         self.assertEqual(native.status.value, "equivalent")
 
-    def test_attached_sessions_reject_process_relative_native_reports(self):
+    def test_attached_sessions_preserve_reports_without_process_relative_writes(self):
         bridge = self.bridge()
         bridge.register_design("reference", self.designs[0])
         bridge.register_design("candidate", self.designs[1])
         self.attach(bridge)
         original_cwd = Path.cwd()
-        rejected = self.verify(report_skipped_outputs=True)
-        self.assertEqual(rejected["status"], "error", rejected)
+        before = {p: p.read_bytes() for p in original_cwd.glob("skipped*pos.txt")}
+        result = self.verify(verification="sec", report_skipped_outputs=True)
+        self.assert_verdict(result, "different")
         self.assertEqual(Path.cwd(), original_cwd)
-        self.assert_verdict(self.verify(), "different")
+        self.assertEqual(before, {p: p.read_bytes() for p in original_cwd.glob("skipped*pos.txt")})
+        self.assertEqual(result["report_format"], "structured-v1")
+        report = json.loads(result["reports"]["verification-result.json"])
+        self.assertEqual(report, result["verification_result"])
+        path = Path(result["report_paths"]["verification-result.json"])
+        self.assertTrue(path.is_relative_to(self.root / "results"))
+        self.assertEqual(json.loads(path.read_text()), report)
+        fetched = self.call("get_session_reports", report_id=result["report_id"])
+        self.assertEqual(fetched["verification_result"], report)
+        next_result = self.verify(verification="sec", report_skipped_outputs=True)
+        self.assertNotEqual(next_result["report_id"], result["report_id"])
+        self.assertEqual(self.call("get_session_reports", report_id=result["report_id"])["status"], "error")
+        self.assertEqual(json.loads(path.read_text()), report)
+
+    def test_session_reports_require_a_completed_verification(self):
+        self.attach(self.bridge())
+        result = self.call("get_session_reports")
+        self.assertEqual(result["status"], "error")
+
+    def test_attached_report_preserves_actual_skipped_and_unproven_fields(self):
+        bridge = self.bridge()
+        bridge.register_design("reference", self.designs[0])
+        bridge.register_design("candidate", self.designs[1])
+        self.attach(bridge)
+        native = {"status": "partially_proved", "exit_code": 2, "verification": "sec",
+                  "total_outputs": 3, "covered_outputs": 2, "proven_outputs": 1,
+                  "unproven_outputs": ["pending"],
+                  "skipped_observed_outputs": ["floating: no drivers"], "reason": "incomplete"}
+        with patch("kepler_formal_mcp.session_backend.verify_loaded", return_value=native) as verify:
+            result = self.verify(verification="sec", report_skipped_outputs=True)
+        self.assertFalse(verify.call_args.args[2]["report_skipped_outputs"])
+        self.assertEqual(json.loads(result["reports"]["verification-result.json"]), native)
+        self.assertEqual(self.call("get_session_reports")["verification_result"], native)
+
+    def test_attached_native_sec_reports_skipped_cones_without_dumping(self):
+        from najaeda import naja
+
+        liberty = self.root / "cells.lib"
+        liberty.write_text('''library(test) {
+          cell(BUF) {
+            pin(A) { direction: input; }
+            pin(Y) { direction: output; function: "A"; }
+          }
+        }''')
+        paths = [self.root / "floating.v", self.root / "driven.v"]
+        paths[0].write_text('''module top(input a, output good, output floating);
+          wire undriven;
+          BUF g(.A(a), .Y(good));
+          BUF f(.A(undriven), .Y(floating));
+        endmodule''')
+        paths[1].write_text('''module top(input a, output good, output floating);
+          BUF g(.A(a), .Y(good));
+          BUF f(.A(a), .Y(floating));
+        endmodule''')
+        bridge = self.bridge()
+        for name, path in zip(("reference", "candidate"), paths):
+            database = naja.NLDB.create(self.universe)
+            database.loadLibertyPrimitives([str(liberty)])
+            database.loadVerilog([str(path)])
+            bridge.register_design(name, database.getTopDesign())
+        self.attach(bridge)
+        result = self.verify(verification="sec", report_skipped_outputs=True)
+        proof = result["verification_result"]
+        self.assertTrue(proof["skipped_observed_outputs"], result)
+        self.assertIn("floating", str(proof["skipped_observed_outputs"]))
+        self.assertEqual(json.loads(result["reports"]["verification-result.json"]), proof)
+        fetched = self.call("get_session_reports", report_id=result["report_id"])
+        self.assertEqual(fetched["verification_result"], proof)
 
     def test_attached_timeout_does_not_kill_or_invalidate_callers_process(self):
         bridge = self.bridge()

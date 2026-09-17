@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from threading import RLock
@@ -40,6 +41,7 @@ class DesignSession:
         self._input_files: set[Path] = set()
         self._workspace = Path.cwd().resolve()
         self._universe = None
+        self._last_report = None
         if owned:
             if naja.NLUniverse.get() is not None:
                 raise RuntimeError("A managed session requires a fresh Naja universe")
@@ -126,8 +128,10 @@ class DesignSession:
         reports_requested = options.get("report_skipped_outputs", False)
         if not isinstance(reports_requested, bool):
             raise ValueError("report_skipped_outputs must be a boolean")
-        if reports_requested and not self._owned:
-            raise ValueError("report_skipped_outputs is unavailable for attached sessions because it writes in the caller's working directory")
+        if not self._owned:
+            # Native text reports use process-global paths. Attached interpreters
+            # instead persist the complete structured result without changing cwd.
+            options["report_skipped_outputs"] = False
 
         log_value = options.get("log_file")
         if log_value is not None and (not isinstance(log_value, str) or not log_value.strip()):
@@ -145,16 +149,39 @@ class DesignSession:
             for name in REPORT_FILENAMES:
                 (self._workspace / name).unlink(missing_ok=True)
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._last_report = None
         result = verify_loaded(self._designs[names[0]], self._designs[names[1]], options)
-        return {
+        report_id = uuid4().hex
+        report_dir = self.output_dir / f"reports-{report_id}"
+        report_dir.mkdir()
+        serialized = json.dumps(result, indent=2, allow_nan=False) + "\n"
+        report_path = report_dir / "verification-result.json"
+        report_path.write_text(serialized, encoding="utf-8")
+        reports = read_reports(self._workspace) if self._owned and reports_requested else {}
+        reports["verification-result.json"] = serialized
+        response = {
             "status": "error" if result["status"] == "error" else "success",
             "session_id": self.session_id, "exit_code": result["exit_code"],
             "verdict": result["status"], "verification_result": result,
             "generated_log_file": str(log_path),
             "log_tail": tail(log_path.read_text(encoding="utf-8", errors="replace")) if log_path.is_file() else "",
-            "reports": read_reports(self._workspace) if self._owned else {},
+            "reports": reports,
+            "report_format": "structured-v1",
+            "report_id": report_id,
+            "report_paths": {"verification-result.json": str(report_path)},
             "stdout_tail": "", "stderr_tail": "",
         }
+        self._last_report = response
+        return response
+
+    def _reports(self, request: dict[str, Any]) -> dict[str, Any]:
+        if self._last_report is None:
+            raise ValueError("No completed verification report is available")
+        expected = request.get("report_id")
+        if expected is not None and expected != self._last_report["report_id"]:
+            raise ValueError("The requested report is not the latest verification; use its saved artifact")
+        # Never re-run verification or infer empty skipped lists from absent files.
+        return json.loads(json.dumps(self._last_report))
 
     def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
         with self.lock:
@@ -172,12 +199,15 @@ class DesignSession:
                 return self._load(request)
             if operation == "verify":
                 return self._verify(request)
+            if operation == "reports":
+                return self._reports(request)
             raise ValueError(f"Unknown session operation: {operation!r}")
 
     def close(self) -> dict[str, Any]:
         with self.lock:
             if not self._closed:
                 self._designs.clear()
+                self._last_report = None
                 self._databases.clear()
                 if self._owned:
                     from najaeda import naja

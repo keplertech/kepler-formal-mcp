@@ -88,8 +88,8 @@ def verify_session(design1: str = "reference", design2: str = "candidate",
     Log paths are relative to the session's fixed output directory. Managed
     timeouts terminate/invalidate that session. Attached timeouts leave the
     caller alive and verification may still be running; retries can report busy.
-    Attached sessions do not support report_skipped_outputs because those
-    native reports write into the caller's process-wide working directory.
+    Attached sessions retain skipped-output details in verification-result.json
+    from the Python result, never writing native reports into the caller's cwd.
     """
     return manager.call({"operation": "verify", "design1": design1, "design2": design2,
                          "options": {"mode": verification, "solver": solver, "max_k": max_k,
@@ -97,7 +97,19 @@ def verify_session(design1: str = "reference", design2: str = "candidate",
                                      "allow_boundary_mismatch": allow_boundary_mismatch,
                                      "report_skipped_outputs": report_skipped_outputs,
                                      "log_file": log_file_name, "log_level": log_level}},
-                        session_id, timeout_seconds)
+                         session_id, timeout_seconds)
+
+
+@_json_result
+def get_session_reports(session_id: str | None = None, report_id: str | None = None) -> str:
+    """Retrieve the latest completed proof, coverage and skipped/unproven outputs.
+
+    Works for managed and attached sessions without reloading or verifying.
+    An optional report_id rejects a stale request after another verification.
+    Results include the exact native result, JSON report contents and saved path.
+    An old report is historical evidence, not proof of subsequent caller edits.
+    """
+    return manager.call({"operation": "reports", "report_id": report_id}, session_id, 30)
 
 
 @_json_result
@@ -108,5 +120,5 @@ def close_session(session_id: str | None = None) -> str:
 
 def register(app):
     for function in (open_session, attach_session, set_session, list_sessions,
-                     load_designs, verify_session, close_session):
+                     load_designs, verify_session, get_session_reports, close_session):
         threaded_tool(app)(function)

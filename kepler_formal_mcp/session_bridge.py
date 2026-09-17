@@ -118,8 +118,8 @@ class SessionBridge:
     def _dispatch(self, request: Any) -> dict[str, Any]:
         if not isinstance(request, dict):
             return _error("Session request payload must be a JSON object")
-        if request.get("operation") not in {"inspect", "load", "verify", "info"}:
-            return _error("Session operation must be inspect, load, verify, or info")
+        if request.get("operation") not in {"inspect", "load", "verify", "info", "reports"}:
+            return _error("Session operation must be inspect, load, verify, info, or reports")
         if self._closing.is_set():
             return _error("Session bridge is closing")
         if not self.lock.acquire(blocking=False):
