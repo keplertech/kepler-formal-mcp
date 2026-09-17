@@ -1,60 +1,60 @@
-# Using Kepler Formal MCP for Design Comparison
+# A small equivalence example
 
-This guide explains how to use the Kepler Formal MCP to analyze and compare Verilog designs with their libraries.
+Create these three files in a design directory. They use only Verilog assignments, so no Liberty files are needed.
 
-## Overview
+`reference.v`:
 
-The [kepler-formal-regress](https://github.com/keplertech/kepler-formal-regress.git) repository contains ready-to-use design examples with their libraries:
-- **black_parrot**: A complete processor design with all necessary files
-- **tinyrocket**: A simple RISC-V processor design with all necessary files
-
-Each directory contains `.v` (Verilog) files and `.lib` (library) files that you can use immediately.
-
-## Step 1: Clone the Kepler Formal Regress Repository
-
-```bash
-git clone https://github.com/keplertech/kepler-formal-regress.git <path-to-regress>
+```verilog
+module reference(input a, output y);
+  assign y = a;
+endmodule
 ```
 
-## Step 2: Copy Design Folder to Your Shared Folder
+`equivalent.v`:
 
-Copy an entire design directory (black_parrot or tinyrocket) to your shared folder:
-
-```bash
-# Choose one design
-cp -r <path-to-regress>/black_parrot <path-to-shared-folder>/
-# or
-cp -r <path-to-regress>/tinyrocket <path-to-shared-folder>/
+```verilog
+module candidate(input a, output y);
+  wire connection;
+  assign connection = a;
+  assign y = connection;
+endmodule
 ```
 
-Your shared folder now contains all Verilog files and libraries needed for analysis.
+`different.v`:
 
-## Step 3: Generate Design Variants 
-
-Each design folder may contain a Python script that generates modified versions of the `.v` files (with intentional changes for testing):
-
-```bash
-cd <path-to-shared-folder>/black_parrot
-python3 black_parrot_edit.py
+```verilog
+module candidate(input a, output y);
+  assign y = 1'b0;
+endmodule
 ```
 
-This creates modified versions of the design files that you can compare with the originals.
+After [configuring your MCP client](instructions-claude.md), call `create_yaml_and_run_kepler_formal` with:
 
-## Step 4: Use Kepler Formal MCP in Claude
+```json
+{
+  "input_paths": ["/absolute/path/reference.v", "/absolute/path/equivalent.v"],
+  "liberty_files": [],
+  "allowed_output_dir": "/absolute/path/verification-output",
+  "yaml_output_path": "equivalent.yaml",
+  "verification": "lec"
+}
+```
 
-After setting up Claude and configuring the shared folder path in Claude, you can ask it to compare the two versions using the Kepler Formal MCP tools:
+The result should have `status: "success"` and `verdict: "equivalent"`. Change the second input to `different.v` and the YAML output name to `different.yaml`: execution should still succeed, with `verdict: "different"`.
 
-### Example: Compare Two Versions
-"Use the Kepler Formal MCP tools to compare `tinyrocket.v` with `tinyrocket_modified.v` and identify all differences"
+You can also create a YAML file beside the designs and pass its path to `run_kepler_formal_yaml`:
 
-or
+```yaml
+format: verilog
+input_paths:
+  - reference.v
+  - equivalent.v
+liberty_files: []
+verification: lec
+solver: kissat
+cnf_export: false
+```
 
-"Load both versions of black_parrot with their libraries and perform a formal verification comparison to find the differences"
+Pass `allowed_output_dir` to choose a writable log directory. Relative input and library paths in an existing YAML file are resolved from that file's directory. The input YAML is not rewritten.
 
-**Important:** Claude should use the MCP tools directly to analyze the files. Do not ask Claude to read files manually - let the MCP handle the analysis.
-
-The Kepler Formal MCP will:
-- Read both `.v` files from your shared folder
-- Load the corresponding `.lib` library files
-- Perform formal verification analysis
-- Report all logic differences between the two versions
+For cell-based netlists, supply the common `.lib` files in `liberty_files`. For sequential checking, use `verification: sec` with the supported `max_k`, `sec_engine`, and `sec_encoding` settings. Inspect the returned verdict and counterexample information: `inconclusive` does not mean equivalent, and a reported counterexample does not enumerate every possible difference.

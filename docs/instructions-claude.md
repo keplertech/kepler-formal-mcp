@@ -1,76 +1,45 @@
 # Configuring Kepler Formal MCP in Claude Desktop
 
-This guide explains how to add the Kepler Formal MCP server to Claude Desktop.
+First install the project in a virtual environment using the [README](../README.md). The environment includes the published Kepler Formal and NajaEDA packages.
 
-**Note:** This guide assumes you have already installed Kepler Formal MCP. See the main README and build script for installation instructions.
-
-## Configuration
-
-### Step 1: Locate Your Configuration File
-
-Find your Claude Desktop configuration file:
-- **Linux/Mac**: `~/.config/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-### Step 2: Add Kepler Formal to Your MCP Servers
-
-Edit your configuration file and add the Kepler Formal server. Replace the placeholders with your actual paths:
-- `<mcp-server-name>`: A name for this server (e.g., `kepler`, `kepler-formal`, `formal-verification`)
-- `<path-to-kepler-formal-mcp>`: Full path to your Kepler Formal MCP repository
-- `<path-to-kepler-formal-src>`: Path to the Kepler Formal source code (usually `<path-to-kepler-formal-mcp>/thirdparty/kepler-formal/src`)
+Add this entry to your Claude Desktop MCP configuration, replacing both paths with absolute paths on your machine:
 
 ```json
 {
   "mcpServers": {
-    "<mcp-server-name>": {
-      "command": "python3",
-      "args": [
-        "<path-to-kepler-formal-mcp>/server.py"
-      ],
+    "kepler-formal": {
+      "command": "/absolute/path/to/kepler-formal-mcp/.venv/bin/kepler-formal-mcp",
       "env": {
-        "PYTHONPATH": "<path-to-kepler-formal-src>"
+        "KEPLER_FORMAL_AI_OUTPUT_DIR": "/absolute/path/to/verification-output"
       }
     }
   }
 }
 ```
 
-### Step 3: Verify
-
-1. Save the configuration file
-2. Restart Claude Desktop
-3. Check that your MCP server appears as "Connected" in Claude's MCP server list
-
-## Strongly Recommended: Add a Shared Folder
-
-Adding a shared folder is strongly recommended. Without it, you'll need to copy-paste potentially large files directly into Claude's prompt, which is inefficient and can hit token limits.
-
-With the filesystem MCP server, Claude can access your files directly:
+On Windows, use the virtual environment's executable and JSON-escaped backslashes:
 
 ```json
-"filesystem": {
-  "command": "npx",
-  "args": [
-    "-y",
-    "@modelcontextprotocol/server-filesystem",
-    "<path-to-shared-folder>"
-  ]
+{
+  "mcpServers": {
+    "kepler-formal": {
+      "command": "C:\\absolute\\path\\kepler-formal-mcp\\.venv\\Scripts\\kepler-formal-mcp.exe",
+      "env": {
+        "KEPLER_FORMAL_AI_OUTPUT_DIR": "C:\\absolute\\path\\verification-output"
+      }
+    }
+  }
 }
 ```
 
-Replace `<path-to-shared-folder>` with an absolute path to a folder where you want to store files accessible to Claude. This allows Claude to read large design files, test vectors, and documentation without copy-pasting.
+No `PYTHONPATH` or Kepler Formal source directory is required. The executable uses its virtual environment even when Claude starts from another directory. Save the configuration and restart Claude Desktop.
 
-## Troubleshooting
+Use absolute design and library paths in tool calls because desktop clients may launch servers from an unexpected directory. The output environment variable controls where generated YAML and logs can be written; each call can override it with `allowed_output_dir`.
 
-**Server won't connect:**
-- Verify paths are absolute (not relative)
-- Restart Claude Desktop after saving the config
-- Ensure the config file is valid JSON
-- Check that `<path-to-kepler-formal-mcp>/server.py` exists
+For example:
 
-**"Command not found" for python3:**
-- Use the full path to Python: `/usr/bin/python3` instead of `python3`
+> Use `create_yaml_and_run_kepler_formal` to compare `/my/designs/reference.v` and `/my/designs/candidate.v`, with no Liberty libraries. Report the verification verdict.
 
-**Invalid JSON errors:**
-- Use a JSON validator to check your config file
-- Ensure all commas and quotes are correct
+For an existing YAML file, paths inside it are relative to its directory. Ask Claude to use `run_kepler_formal_yaml` with the YAML file's absolute path. The MCP reads the designs directly; a filesystem MCP is only needed if you also want Claude to create or edit the design files.
+
+If connection fails, check that the configured executable exists and that the environment was installed successfully with `python -m pip check`. Run the executable in a terminal to inspect errors on stderr. It normally waits silently for MCP messages on stdin.
