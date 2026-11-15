@@ -101,12 +101,21 @@ def run(request: dict, yaml_path: Path, timeout_seconds: int) -> dict:
         raise ValueError("timeout_seconds must be a positive integer")
     log_path = Path(request["log_file"])
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    export_path = Path(request["btor2_export_path"]) if request.get("btor2_export_path") else None
+    if export_path is not None:
+        # The library writes next to its target and does not create that directory.
+        export_path.parent.mkdir(parents=True, exist_ok=True)
     result = _invoke_worker(request, timeout_seconds, yaml_path)
     verification = result.pop("payload", None)
     result.update(yaml_config=str(yaml_path), generated_log_file=str(log_path))
     if verification is not None:
         result.update(exit_code=verification["exit_code"], verdict=verification["status"],
                       verification_result=verification)
+    if export_path is not None:
+        # An earlier file at this path is not evidence that this run exported.
+        exported = (verification is not None and verification["status"] != "error"
+                    and export_path.is_file())
+        result["generated_btor2_file"] = str(export_path) if exported else None
     result["log_tail"] = (tail(log_path.read_text(encoding="utf-8", errors="replace"))
                           if log_path.is_file() else "")
     return result

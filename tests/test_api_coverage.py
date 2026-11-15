@@ -110,12 +110,41 @@ class PublishedApiCoverageTest(unittest.TestCase):
         self.assertEqual(permitted["verdict"], "equivalent", permitted)
 
     def test_all_public_verification_options_have_tool_arguments(self):
+        from kepler_formal_mcp import config, verification
+
         renamed = {"mode": "verification", "log_file": "log_file_name"}
-        signature = inspect.signature(server.create_yaml_and_run_kepler_formal)
-        for field in fields(kf.VerificationOptions):
-            argument = renamed.get(field.name, field.name)
-            with self.subTest(option=field.name):
-                self.assertIn(argument, signature.parameters)
+        native = [field.name for field in fields(kf.VerificationOptions)]
+        self.assertEqual(set(verification.OPTION_NAMES), set(native))
+        self.assertLessEqual(set(native), config.SUPPORTED_KEYS)
+        for tool in (server.create_yaml_and_run_kepler_formal, server.verify_session):
+            signature = inspect.signature(tool)
+            for name in native:
+                with self.subTest(tool=tool.__name__, option=name):
+                    self.assertIn(renamed.get(name, name), signature.parameters)
+
+    def test_boolean_tool_defaults_match_the_python_api(self):
+        # A tool default is sent explicitly, so a stale copy would override the library.
+        for tool in (server.create_yaml_and_run_kepler_formal, server.verify_session):
+            signature = inspect.signature(tool)
+            for field in fields(kf.VerificationOptions):
+                if isinstance(field.default, bool):
+                    with self.subTest(tool=tool.__name__, option=field.name):
+                        self.assertIs(signature.parameters[field.name].default, field.default)
+
+    def test_sec_model_switches_can_be_disabled_only_for_sec(self):
+        from kepler_formal_mcp import config
+
+        for option in config.SEC_MODEL_OPTIONS:
+            with self.subTest(option=option):
+                self.compare("equivalent", verification="sec", max_k=2, **{option: False})
+                rejected = json.loads(server.create_yaml_and_run_kepler_formal(
+                    input_paths=[str(self.reference), str(self.candidate)], liberty_files=[],
+                    yaml_output_path=str(self.root / "lec.yaml"),
+                    allowed_output_dir=str(self.root), timeout_seconds=30, **{option: False},
+                ))
+                self.assertEqual(rejected["status"], "error", rejected)
+                self.assertIn(option, rejected["stderr_tail"])
+                self.assertFalse((self.root / "lec.yaml").exists())
 
     def test_advertised_enums_match_the_installed_python_api(self):
         from kepler_formal_mcp import options

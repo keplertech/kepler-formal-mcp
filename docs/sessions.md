@@ -19,8 +19,10 @@ Call these MCP tools in order:
 
 `verify_session` accepts the same verification settings as the file tools:
 `verification`, `solver`, `max_k`, `sec_engine`, `sec_encoding`,
-`allow_boundary_mismatch`, `report_skipped_outputs`, `log_level`, and
-`log_file_name`. For example, use `verification="sec", max_k=10,
+`allow_boundary_mismatch`, `report_skipped_outputs`, `log_level`,
+`log_file_name`, `set_as_boundary`, the SEC proof-model switches, the reset
+bootstrap and BTOR2 export described in [Python API coverage](python-api.md).
+For example, use `verification="sec", max_k=10,
 sec_engine="pdr", sec_encoding="binary"` for a bounded SEC run.
 
 Open more sessions for independent designs. `list_sessions()` shows them;
@@ -104,7 +106,9 @@ verification tools are unchanged.
 
 ## Timeouts and outputs
 
-Both session types restrict logs to their selected output directory. Every
+Both session types restrict logs and BTOR2 exports to their selected output
+directory; a response to a request with `btor2_export_path` names the written
+file in `generated_btor2_file`. Every
 completed verification saves the full Python result as `verification-result.json`
 inside a fresh `reports-<id>` directory and returns its contents in `reports`,
 with `report_format="structured-v1"`, `report_id` and `report_paths`.

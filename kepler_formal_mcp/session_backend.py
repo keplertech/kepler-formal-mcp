@@ -69,6 +69,18 @@ class DesignSession:
             raise ReferenceError("Native lookup returned a different design identity")
         return design
 
+    def _output_file(self, value, option: str, noun: str) -> Path:
+        """Resolve a requested output inside the session's output directory."""
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{option} must be a nonempty path string or null")
+        path = Path(value).expanduser()
+        path = (path if path.is_absolute() else self.output_dir / path).resolve()
+        if not path.is_relative_to(self.output_dir):
+            raise ValueError(f"{noun[0].upper()}{noun[1:]} path is outside the session output directory: {path}")
+        if path in self._input_files or path.is_dir():
+            raise ValueError(f"The {noun} file must not overwrite an input file or directory")
+        return path
+
     def _metadata(self, design):
         return {"design_name": design.getName(),
                 "reference": reference_from_design(self.session_id, design).model_dump()}
@@ -128,21 +140,24 @@ class DesignSession:
             options["report_skipped_outputs"] = False
 
         log_value = options.get("log_file")
-        if log_value is not None and (not isinstance(log_value, str) or not log_value.strip()):
-            raise ValueError("log_file must be a nonempty path string or null")
-        log_path = Path(log_value).expanduser() if log_value is not None else Path(f"verify-{uuid4().hex}.log")
-        log_path = (log_path if log_path.is_absolute() else self.output_dir / log_path).resolve()
-        if not log_path.is_relative_to(self.output_dir):
-            raise ValueError(f"Log path is outside the session output directory: {log_path}")
-        if log_path in self._input_files or log_path.is_dir():
-            raise ValueError("The log file must not overwrite an input file or directory")
+        log_path = self._output_file(log_value if log_value is not None else f"verify-{uuid4().hex}.log",
+                                     "log_file", "log")
         options["log_file"] = str(log_path)
+        export_path = None
+        if options.get("btor2_export_path") is not None:
+            export_path = self._output_file(options["btor2_export_path"], "btor2_export_path", "BTOR2 export")
+            if export_path == log_path:
+                raise ValueError("The BTOR2 export must not overwrite the log file")
+            options["btor2_export_path"] = str(export_path)
         if self._owned:
             if Path.cwd().resolve() != self._workspace:
                 raise RuntimeError("The managed session's private working directory changed")
             for name in REPORT_FILENAMES:
                 (self._workspace / name).unlink(missing_ok=True)
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        if export_path is not None:
+            # The library writes next to its target and does not create that directory.
+            export_path.parent.mkdir(parents=True, exist_ok=True)
         self._last_report = None
         result = verify_loaded(designs[0], designs[1], options)
         report_id = uuid4().hex
@@ -166,6 +181,10 @@ class DesignSession:
             "report_paths": {"verification-result.json": str(report_path)},
             "stdout_tail": "", "stderr_tail": "",
         }
+        if export_path is not None:
+            # An earlier file at this path is not evidence that this run exported.
+            exported = result["status"] != "error" and export_path.is_file()
+            response["generated_btor2_file"] = str(export_path) if exported else None
         self._last_report = response
         return response
 

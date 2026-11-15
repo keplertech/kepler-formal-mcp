@@ -82,12 +82,25 @@ def verify_session(design1: DesignReference, design2: DesignReference,
                    sec_engine: SecEngine | None = None, sec_encoding: SecEncoding | None = None,
                    allow_boundary_mismatch: bool = False, report_skipped_outputs: bool = False,
                    log_file_name: str | None = None, log_level: LogLevel | None = "info",
-                   timeout_seconds: int = 600) -> str:
+                   timeout_seconds: int = 600,
+                   set_as_boundary: list[tuple[str, str]] | None = None,
+                   learn_internal_relations: bool = True,
+                   allow_x_equality_in_internal_relations: bool = True,
+                   binary_relation_round: bool = True,
+                   latch_abstraction: bool = True, data_latch_model: bool = True,
+                   sec_reset_cycles: int | None = None,
+                   sec_reset_ports: list[tuple[str, bool]] | None = None,
+                   btor2_export_path: str | None = None,
+                   btor2_dump_only: bool = False) -> str:
     """Verify explicit session-scoped native design references, without a name registry.
 
-    Log paths are relative to the session's fixed output directory. Managed
-    timeouts terminate/invalidate that session. Attached timeouts leave the
-    caller alive and verification may still be running; retries can report busy.
+    Log and BTOR2 export paths are relative to the session's fixed output
+    directory and cannot leave it. The verification settings are those of
+    create_yaml_and_run_kepler_formal: set_as_boundary pairs leaf instances as
+    shared boundaries; the relation and latch switches, the reset bootstrap
+    and BTOR2 export are SEC-only.
+    Managed timeouts terminate/invalidate that session. Attached timeouts leave
+    the caller alive and verification may still be running; retries can report busy.
     Attached sessions retain skipped-output details in verification-result.json
     from the Python result, never writing native reports into the caller's cwd.
     """
@@ -100,7 +113,18 @@ def verify_session(design1: DesignReference, design2: DesignReference,
                                      "sec_engine": sec_engine, "sec_encoding": sec_encoding,
                                      "allow_boundary_mismatch": allow_boundary_mismatch,
                                      "report_skipped_outputs": report_skipped_outputs,
-                                     "log_file": log_file_name, "log_level": log_level}},
+                                     "log_file": log_file_name, "log_level": log_level,
+                                     "set_as_boundary": [list(pair) for pair in set_as_boundary or []],
+                                     "learn_internal_relations": learn_internal_relations,
+                                     "allow_x_equality_in_internal_relations":
+                                         allow_x_equality_in_internal_relations,
+                                     "binary_relation_round": binary_relation_round,
+                                     "latch_abstraction": latch_abstraction,
+                                     "data_latch_model": data_latch_model,
+                                     "sec_reset_cycles": sec_reset_cycles,
+                                     "sec_reset_ports": [list(pair) for pair in sec_reset_ports or []],
+                                     "btor2_export_path": btor2_export_path,
+                                     "btor2_dump_only": btor2_dump_only}},
                          selected, timeout_seconds)
 
 

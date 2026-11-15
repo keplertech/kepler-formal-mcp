@@ -9,7 +9,7 @@ description = "MCP tools for equivalence checking with the Kepler Formal Python 
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "kepler-formal==0.5.0",
+    "kepler-formal==1.0.0",
     "mcp>=1.12,<2",
     "PyYAML>=6,<7",
 ]
