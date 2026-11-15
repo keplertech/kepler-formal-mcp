@@ -15,7 +15,15 @@ SUPPORTED_KEYS = {
     "format", "input_paths", "liberty_files", "verification", "mode", "solver",
     "max_k", "sec_engine", "sec_encoding", "allow_boundary_mismatch",
     "report_skipped_outputs", "log_file", "log_level", "cnf_export", "cnf_export_path",
+    "set_as_boundary", "learn_internal_relations", "allow_x_equality_in_internal_relations",
+    "binary_relation_round", "latch_abstraction", "data_latch_model",
+    "sec_reset_cycles", "sec_reset_ports", "btor2_export_path", "btor2_dump_only",
 }
+# SEC proof-model switches. The library enables them, and only SEC may disable them.
+SEC_MODEL_OPTIONS = (
+    "learn_internal_relations", "allow_x_equality_in_internal_relations",
+    "binary_relation_round", "latch_abstraction", "data_latch_model",
+)
 
 
 def resolve_path(value: str, base: Path) -> Path:
@@ -51,6 +59,21 @@ def _boolean(config: dict, key: str) -> bool:
     if not isinstance(value, bool):
         raise ValueError(f"{key} must be a boolean")
     return value
+
+
+def _pairs(config: dict, key: str, second: type, shape: str) -> list[list]:
+    """Read a list of [nonempty string, ``second`` value] entries; null means none."""
+    value = config.get(key)
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"{key} must be a list of {shape} pairs")
+    for pair in value:
+        if (not isinstance(pair, (list, tuple)) or len(pair) != 2
+                or not isinstance(pair[0], str) or not pair[0]
+                or not isinstance(pair[1], second) or pair[1] == ""):
+            raise ValueError(f"Each {key} entry must be a {shape} pair")
+    return [list(pair) for pair in value]
 
 
 def normalize(config: dict, yaml_path: Path, root: Path,
@@ -109,6 +132,28 @@ def normalize(config: dict, yaml_path: Path, root: Path,
     if mode == "sec" and result["allow_boundary_mismatch"]:
         raise ValueError("allow_boundary_mismatch is only supported for LEC")
 
+    result["set_as_boundary"] = _pairs(config, "set_as_boundary", str, "[design1 path, design2 path]")
+    # Omitted switches keep the library default instead of a copy made here.
+    for key in SEC_MODEL_OPTIONS:
+        if key in config:
+            result[key] = _boolean(config, key)
+    reset_cycles = config.get("sec_reset_cycles")
+    if reset_cycles is not None and (type(reset_cycles) is not int or reset_cycles <= 0):
+        raise ValueError("sec_reset_cycles must be a positive integer")
+    reset_ports = _pairs(config, "sec_reset_ports", bool, "[port name, active value]")
+    if len({name for name, _ in reset_ports}) != len(reset_ports):
+        raise ValueError("sec_reset_ports must not repeat a port name")
+    if (reset_cycles is None) != (not reset_ports):
+        raise ValueError("sec_reset_cycles and sec_reset_ports must be given together")
+    result.update(sec_reset_cycles=reset_cycles, sec_reset_ports=reset_ports,
+                  btor2_dump_only=_boolean(config, "btor2_dump_only"))
+    if mode == "lec":
+        sec_only = [key for key in SEC_MODEL_OPTIONS if result.get(key) is False]
+        sec_only += [key for key in ("sec_reset_cycles", "sec_reset_ports",
+                                     "btor2_export_path", "btor2_dump_only") if config.get(key)]
+        if sec_only:
+            raise ValueError(", ".join(sec_only) + " can only be changed with verification: sec")
+
     requested_log = log_file_name if log_file_name is not None else config.get("log_file")
     log_file = (resolve_path(requested_log, yaml_path.parent) if requested_log is not None
                 else root / f"{yaml_path.stem}.log")
@@ -116,4 +161,13 @@ def normalize(config: dict, yaml_path: Path, root: Path,
     if log_file in resolved_inputs + resolved_libraries + [yaml_path.resolve()]:
         raise ValueError("The log file must not overwrite the YAML config or an input file")
     result["log_file"] = str(log_file)
+
+    export = config.get("btor2_export_path")
+    if export is not None:
+        export = allowed_path(resolve_path(export, yaml_path.parent), root)
+        if export in resolved_inputs + resolved_libraries + [yaml_path.resolve(), log_file]:
+            raise ValueError("The BTOR2 export must not overwrite the YAML config, the log or an input file")
+    elif result["btor2_dump_only"]:
+        raise ValueError("btor2_dump_only requires btor2_export_path")
+    result["btor2_export_path"] = str(export) if export is not None else None
     return result

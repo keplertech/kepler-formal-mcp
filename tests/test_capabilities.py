@@ -38,12 +38,17 @@ class CapabilitiesTest(unittest.TestCase):
         self.assertEqual(set(result["enums"]["Solver"]), {"kissat", "cadical", "glucose"})
         self.assertIn("k_induction", result["enums"]["SecEngine"])
         self.assertIn("dual_rail_steady", result["enums"]["SecEncoding"])
-        self.assertIn("partially_proved", result["enums"]["VerificationStatus"])
+        self.assertTrue({"partially_proved", "exported"} <= set(result["enums"]["VerificationStatus"]))
         self.assertEqual(result["option_defaults"], {
             "mode": "lec", "solver": "kissat", "max_k": None,
             "sec_engine": None, "sec_encoding": None,
             "allow_boundary_mismatch": False, "report_skipped_outputs": False,
             "log_file": None, "log_level": None,
+            "set_as_boundary": [], "learn_internal_relations": True,
+            "allow_x_equality_in_internal_relations": True, "binary_relation_round": True,
+            "latch_abstraction": True, "data_latch_model": True,
+            "sec_reset_cycles": None, "sec_reset_ports": [],
+            "btor2_export_path": None, "btor2_dump_only": False,
         })
         self.assertTrue({
             "status", "exit_code", "reason", "unproven_outputs", "skipped_observed_outputs",

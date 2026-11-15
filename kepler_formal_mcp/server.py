@@ -84,13 +84,30 @@ def create_yaml_and_run_kepler_formal(
     sec_encoding: SecEncoding | None = None,
     allow_boundary_mismatch: bool = False,
     report_skipped_outputs: bool = False,
+    set_as_boundary: list[tuple[str, str]] | None = None,
+    learn_internal_relations: bool = True,
+    allow_x_equality_in_internal_relations: bool = True,
+    binary_relation_round: bool = True,
+    latch_abstraction: bool = True,
+    data_latch_model: bool = True,
+    sec_reset_cycles: int | None = None,
+    sec_reset_ports: list[tuple[str, bool]] | None = None,
+    btor2_export_path: str | None = None,
+    btor2_dump_only: bool = False,
 ) -> str:
     """Load exactly two Verilog designs in NajaEDA and check them with Kepler Python.
 
     Input/library paths are relative to the launch directory. YAML output is
     relative to allowed_output_dir (or KEPLER_FORMAL_AI_OUTPUT_DIR; default:
-    launch directory). log_file_name is relative to the generated YAML file.
-    Use verification='lec' or 'sec'; max_k/SEC engine/encoding apply only to SEC.
+    launch directory). log_file_name and btor2_export_path are relative to the
+    generated YAML file and must stay inside the output directory.
+    Use verification='lec' or 'sec'. Only SEC accepts max_k, an engine or
+    encoding, disabled internal-relation or latch-model switches, a reset
+    bootstrap (sec_reset_cycles with [port name, active value] pairs in
+    sec_reset_ports) and BTOR2 export; btor2_dump_only stops after the export
+    with verdict 'exported' and no proof.
+    set_as_boundary lists [design1 path, design2 path] pairs of leaf instances
+    to treat as shared proof boundaries, in either mode.
     CNF export is unavailable in the Python API and cnf_export must stay false.
     Read `verdict` for equivalent/different/inconclusive, not the native exit code.
     """
@@ -106,12 +123,22 @@ def create_yaml_and_run_kepler_formal(
             "verification": verification, "max_k": max_k, "sec_engine": sec_engine,
             "sec_encoding": sec_encoding, "allow_boundary_mismatch": allow_boundary_mismatch,
             "report_skipped_outputs": report_skipped_outputs,
+            "set_as_boundary": set_as_boundary,
+            "learn_internal_relations": learn_internal_relations,
+            "allow_x_equality_in_internal_relations": allow_x_equality_in_internal_relations,
+            "binary_relation_round": binary_relation_round,
+            "latch_abstraction": latch_abstraction, "data_latch_model": data_latch_model,
+            "sec_reset_cycles": sec_reset_cycles, "sec_reset_ports": sec_reset_ports,
+            "btor2_export_path": btor2_export_path, "btor2_dump_only": btor2_dump_only,
         }
         request = config.normalize(document, yaml_path, root, log_file_name)
         if str(yaml_path) in request["input_paths"] + request["liberty_files"]:
             raise ValueError("The YAML output must not overwrite an input file")
         if type(timeout_seconds) is not int or timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be a positive integer")
+        # Record the resolved paths and plain lists the run actually uses.
+        document.update({key: request[key] or None for key in (
+            "set_as_boundary", "sec_reset_ports", "btor2_export_path")})
         document["log_file"] = request["log_file"]
         document = {key: value for key, value in document.items()
                     if value is not None or key == "log_level"}

@@ -22,7 +22,7 @@ py -3 -m venv .venv
 python -m pip install --only-binary=kepler-formal,najaeda .
 ```
 
-Installing this project installs `kepler-formal==0.5.0`, which requires `najaeda==0.7.24`, plus the MCP SDK and PyYAML. No Nix, submodule checkout, C++ build, or system compiler setup is needed.
+Installing this project installs `kepler-formal==1.0.0`, which requires `najaeda==0.7.33`, plus the MCP SDK and PyYAML. No Nix, submodule checkout, C++ build, or system compiler setup is needed.
 
 Start the stdio MCP server with:
 
@@ -63,9 +63,9 @@ cnf_export: false
 
 Exactly two structural Verilog netlist files are required. Synthesize behavioral RTL before loading it with NajaEDA. Paths inside an existing YAML file are resolved relative to that file; paths passed to the create tool are resolved relative to the server's launch directory. The create tool writes absolute design/library paths into its generated YAML.
 
-Set `KEPLER_FORMAL_AI_OUTPUT_DIR` to a writable output directory, or pass `allowed_output_dir` to a tool. The default is the server's launch directory. Generated YAML and logs must stay inside the selected output directory. An existing YAML file is read without rewriting it.
+Set `KEPLER_FORMAL_AI_OUTPUT_DIR` to a writable output directory, or pass `allowed_output_dir` to a tool. The default is the server's launch directory. Generated YAML, logs and BTOR2 exports must stay inside the selected output directory. An existing YAML file is read without rewriting it.
 
-Supported verification settings are `verification` (`lec` or `sec`; `mode` is an alias), `solver`, `max_k`, `sec_engine`, `sec_encoding`, `allow_boundary_mismatch`, `report_skipped_outputs`, `log_file`, and `log_level`. CNF export is unavailable through this library API: `cnf_export` defaults to `false`, and `true` returns a clear error. Unsupported CLI-only YAML options also return an error.
+Supported verification settings are `verification` (`lec` or `sec`; `mode` is an alias), `solver`, `max_k`, `sec_engine`, `sec_encoding`, `allow_boundary_mismatch`, `report_skipped_outputs`, `log_file`, `log_level`, and `set_as_boundary`. SEC also accepts the proof-model switches (`learn_internal_relations`, `allow_x_equality_in_internal_relations`, `binary_relation_round`, `latch_abstraction`, `data_latch_model`), a reset bootstrap (`sec_reset_cycles` with `sec_reset_ports`) and BTOR2 export (`btor2_export_path`, `btor2_dump_only`). CNF export is unavailable through this library API: `cnf_export` defaults to `false`, and `true` returns a clear error. Unsupported CLI-only YAML options also return an error, including the CLI spellings `sec_reset`, `btor2_export` and `dump_only`: YAML keys here are the Python option names.
 
 All current `VerificationOptions` fields are exposed. See [Python API coverage and SEC usage](docs/python-api.md) for the mapping and supported choices. MCP tool schemas list the accepted modes, solvers, engines and encodings; `get_kepler_formal_info` reads them from the installed library.
 
@@ -76,12 +76,13 @@ See [persistent sessions and attaching to live NajaEDA designs](docs/sessions.md
 The returned JSON separates tool execution from the verification verdict:
 
 - `status`: `success` when verification ran, or `error` for invalid input, timeout, or a worker failure.
-- `verdict`: the equivalence outcome, such as `equivalent`, `different`, or `inconclusive`.
+- `verdict`: the equivalence outcome, such as `equivalent`, `different`, or `inconclusive`; `exported` when `btor2_dump_only` stopped before any proof.
 - `verification_result`: the structured result returned by Kepler Formal.
 - `stdout_tail` / `stderr_tail`: captured worker output for diagnosis.
 - `reports`: contents of native skipped-output reports, retained after worker cleanup when `report_skipped_outputs` is enabled.
+- `generated_btor2_file`: present when a BTOR2 export was requested; the file this run wrote, or null if it wrote none.
 
-Always inspect `verdict`: a successful execution can report different designs. A bounded SEC check can be inconclusive; it is not an equivalence proof.
+Always inspect `verdict`: a successful execution can report different designs. A bounded SEC check can be inconclusive, and an export alone proves nothing; neither is an equivalence proof.
 
 See [the small design example](docs/test-generation.md) for equivalent and different inputs.
 
@@ -91,4 +92,4 @@ See [the small design example](docs/test-generation.md) for equivalent and diffe
 python -m unittest discover -s tests -v
 ```
 
-CI runs the tests against the published dependencies on Linux x86_64, macOS ARM64, and Windows AMD64 with Python 3.10 and 3.14. Tests cover every solver and SEC engine/encoding, API option/result coverage, diagnostic reports, configuration validation, worker isolation, and MCP stdio calls.
+CI runs the tests against the published dependencies on Linux x86_64, macOS ARM64, and Windows AMD64 with Python 3.10 and 3.14. Tests cover every solver and SEC engine/encoding, API option/result coverage, instance boundaries, reset bootstrap, BTOR2 export, diagnostic reports, configuration validation, worker isolation, and MCP stdio calls.

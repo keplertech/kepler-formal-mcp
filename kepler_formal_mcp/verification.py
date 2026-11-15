@@ -10,6 +10,10 @@ from typing import Any
 OPTION_NAMES = (
     "mode", "solver", "max_k", "sec_engine", "sec_encoding",
     "allow_boundary_mismatch", "report_skipped_outputs", "log_file", "log_level",
+    "set_as_boundary", "learn_internal_relations",
+    "allow_x_equality_in_internal_relations", "binary_relation_round",
+    "latch_abstraction", "data_latch_model", "sec_reset_cycles", "sec_reset_ports",
+    "btor2_export_path", "btor2_dump_only",
 )
 
 
@@ -32,7 +36,7 @@ def load_designs(universe: Any, input_paths: list[str], liberty_files: list[str]
             databases.append(database)
             if liberty_files:
                 database.loadLibertyPrimitives(liberty_files)
-            database.loadVerilog([path])
+            database.loadGateLevelVerilog([path])
             design = database.getTopDesign()
             if design is None:
                 raise RuntimeError(f"NajaEDA did not find a top design in {path}")

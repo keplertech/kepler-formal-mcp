@@ -160,6 +160,40 @@ class ManagedSessionTest(SessionFixture):
         self.assert_verdict(result, "different")
         self.assertEqual(Path(result["generated_log_file"]), self.root / "results" / "inside.log")
 
+    def test_session_exports_stay_in_selected_directory(self):
+        self.candidate.write_text(PASS_THROUGH, encoding="utf-8")
+        self.open()
+        self.assert_success(self.load())
+        outside = self.root / "outside.btor2"
+        rejected = self.verify(verification="sec", btor2_export_path=str(outside))
+        self.assertEqual(rejected["status"], "error", rejected)
+        self.assertFalse(outside.exists())
+        export = self.root / "results" / "exports" / "obligation.btor2"
+        dumped = self.verify(verification="sec", btor2_export_path="exports/obligation.btor2",
+                             btor2_dump_only=True)
+        self.assert_verdict(dumped, "exported")
+        self.assertEqual(Path(dumped["generated_btor2_file"]), export)
+        self.assertIn("sort bitvec", export.read_text(encoding="utf-8"))
+        self.assertEqual(self.call("get_session_reports")["generated_btor2_file"], str(export))
+        # The loaded designs stay usable, and other runs do not claim that file.
+        proved = self.verify(verification="sec", learn_internal_relations=False,
+                             binary_relation_round=False, latch_abstraction=False)
+        self.assert_verdict(proved, "equivalent")
+        self.assertNotIn("generated_btor2_file", proved)
+
+    def test_sec_only_settings_are_rejected_for_lec_and_keep_the_session(self):
+        self.open()
+        self.assert_success(self.load())
+        for options in ({"latch_abstraction": False}, {"learn_internal_relations": False},
+                        {"sec_reset_cycles": 1, "sec_reset_ports": [["a", True]]},
+                        {"btor2_export_path": "lec.btor2"}):
+            with self.subTest(options=options):
+                rejected = self.verify(**options)
+                self.assertEqual(rejected["status"], "error", rejected)
+                self.assertIn("SEC", rejected["reason"])
+        self.assertFalse((self.root / "results" / "lec.btor2").exists())
+        self.assert_verdict(self.verify(), "different")
+
     def test_timed_out_managed_session_is_invalidated(self):
         session = self.open()
         self.assert_success(self.load())
@@ -229,7 +263,7 @@ class AttachedSessionTest(SessionFixture):
         self.designs = []
         for path in (self.reference, self.candidate):
             database = naja.NLDB.create(self.universe)
-            database.loadVerilog([str(path)])
+            database.loadGateLevelVerilog([str(path)])
             self.designs.append(database.getTopDesign())
 
     def bridge(self):
@@ -300,6 +334,20 @@ class AttachedSessionTest(SessionFixture):
         self.assertEqual(self.call("get_session_reports", report_id=result["report_id"])["status"], "error")
         self.assertEqual(json.loads(path.read_text()), report)
 
+    def test_attached_sessions_export_btor2_only_into_the_output_directory(self):
+        self.attach(self.bridge())
+        original_cwd = Path.cwd()
+        before = sorted(path.name for path in original_cwd.iterdir() if "btor2" in path.name)
+        result = self.verify(verification="sec", btor2_export_path="attached.btor2", btor2_dump_only=True)
+        self.assert_verdict(result, "exported")
+        export = self.root / "results" / "attached.btor2"
+        self.assertEqual(Path(result["generated_btor2_file"]), export)
+        self.assertTrue(export.is_file())
+        self.assertEqual(Path.cwd(), original_cwd)
+        self.assertEqual(before, sorted(path.name for path in original_cwd.iterdir() if "btor2" in path.name))
+        # The caller's designs are untouched by an export-only request.
+        self.assert_verdict(self.verify(verification="sec"), "different")
+
     def test_session_reports_require_a_completed_verification(self):
         self.attach(self.bridge())
         result = self.call("get_session_reports")
@@ -343,7 +391,7 @@ class AttachedSessionTest(SessionFixture):
         for path in paths:
             database = naja.NLDB.create(self.universe)
             database.loadLibertyPrimitives([str(liberty)])
-            database.loadVerilog([str(path)])
+            database.loadGateLevelVerilog([str(path)])
             self.designs.append(database.getTopDesign())
         self.attach(bridge)
         result = self.verify(verification="sec", report_skipped_outputs=True)
@@ -421,7 +469,7 @@ class AttachedSessionTest(SessionFixture):
         session = self.attach(bridge)
         with bridge.lock:
             database = naja.NLDB.create(self.universe)
-            database.loadVerilog([str(self.reference)])
+            database.loadGateLevelVerilog([str(self.reference)])
             design = database.getTopDesign()
             identity = design.getNLID()
             reference = dict(session_id=session["session_id"], db_id=identity.getDBID(),
